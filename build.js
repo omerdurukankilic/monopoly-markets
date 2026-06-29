@@ -23,6 +23,7 @@ const indexPath = path.join(root, 'index.html');
 const markup = fs.readFileSync(path.join(root, 'src/markup.html'), 'utf8').trim();
 const component = fs.readFileSync(path.join(root, 'src/component.js'), 'utf8').trim();
 const engine = fs.readFileSync(path.join(root, 'src/engine.js'), 'utf8').trim();
+const net = fs.readFileSync(path.join(root, 'src/net.js'), 'utf8').trim();
 
 let html = fs.readFileSync(indexPath, 'utf8');
 
@@ -49,12 +50,16 @@ const bodyEnd = template.indexOf('</script>', bodyStart);
 if (bodyEnd === -1) throw new Error('Unterminated text/x-dc script');
 template = template.slice(0, bodyStart) + '\n' + component + '\n' + template.slice(bodyEnd);
 
-// 4) Inject the engine as a plain global script just before the component.
-//    Strip any previous injection first so rebuilds stay clean.
+// 4) Inject the engine and the networking layer as plain global scripts just
+//    before the component (so window.GameEngine / window.GameNet exist when the
+//    DC runtime evaluates the component). Strip prior injections so rebuilds
+//    stay clean.
 template = template.replace(/<script id="game-engine">[\s\S]*?<\/script>\s*/, '');
+template = template.replace(/<script id="game-net">[\s\S]*?<\/script>\s*/, '');
 const reOpenMatch = template.match(scriptOpenRe); // index shifted after step 3
-const engineScript = '<script id="game-engine">\n' + engine + '\n</script>\n';
-template = template.slice(0, reOpenMatch.index) + engineScript + template.slice(reOpenMatch.index);
+const globals = '<script id="game-engine">\n' + engine + '\n</script>\n' +
+  '<script id="game-net">\n' + net + '\n</script>\n';
+template = template.slice(0, reOpenMatch.index) + globals + template.slice(reOpenMatch.index);
 
 // 5) Re-stringify and write the bundle back. Two escapes mirror what the
 //    original bundler did, both by replacing the "/" with its / form:

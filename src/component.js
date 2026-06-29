@@ -39,6 +39,14 @@ class Component extends DCLogic {
     tradeQty: '',
     tradeMargin: false,
     toast: null,
+    // ── Online multiplayer (#8) ──
+    netRole: 'local',          // 'local' | 'host' | 'player' | 'spectator'
+    roomCode: '',
+    connStatus: '',            // 'connecting' | 'connected' | 'reconnecting'
+    joinCode: '',
+    you: { playerIdx: null, name: '' },
+    pendingQueue: [],          // host: all queued orders; player: own only
+    slots: [],                 // for the join "pick your player" screen
   };
 
   eng() { return window.GameEngine; }
@@ -93,8 +101,98 @@ class Component extends DCLogic {
     const names = setupNames.slice(0, setupCount).map((n, i) => n || `Player ${i + 1}`);
     const stocks = E.createStocks(mode);
     const players = names.map(E.createPlayer);
-    this.setState({ phase: 'market', stocks, players, round: 1, news: [], transactions: [], activePlayer: 0, tradePlayerIdx: 0, tradeStockId: stocks[0].id });
+    this.setState({ phase: 'market', netRole: 'local', stocks, players, round: 1, news: [], transactions: [], activePlayer: 0, tradePlayerIdx: 0, tradeStockId: stocks[0].id });
   }
+
+  // ── Online multiplayer (#8) ──
+  genRoomCode() {
+    const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 4; i++) s += a[Math.floor(Math.random() * a.length)];
+    return s;
+  }
+  setJoinCode(v) { this.setState({ joinCode: (v || '').toUpperCase() }); }
+
+  hostOnline() {
+    if (!window.GameNet) { this.showToast('Networking unavailable', 'error'); return; }
+    const { setupCount, setupNames, mode, gameName } = this.state;
+    const names = setupNames.slice(0, setupCount).map((n, i) => n || `Player ${i + 1}`);
+    const code = this.genRoomCode();
+    const opts = { names, mode, gameName };
+    this.setState({ phase: 'market', netRole: 'host', roomCode: code, connStatus: 'connecting', activePlayer: 0 });
+    this.conn = window.GameNet.connect({
+      room: code,
+      onOpen: () => this.conn.send({ type: 'host', opts }),
+      onStatus: (s) => this.setState({ connStatus: s }),
+      onMessage: (m) => this.onNetMessage(m),
+    });
+  }
+
+  startJoin() {
+    if (!window.GameNet) { this.showToast('Networking unavailable', 'error'); return; }
+    const code = (this.state.joinCode || '').trim().toUpperCase();
+    if (!code) { this.showToast('Enter a room code', 'error'); return; }
+    this.setState({ phase: 'pickPlayer', netRole: 'spectator', roomCode: code, connStatus: 'connecting', slots: [] });
+    this.conn = window.GameNet.connect({
+      room: code,
+      onStatus: (s) => this.setState({ connStatus: s }),
+      onMessage: (m) => this.onNetMessage(m),
+    });
+  }
+
+  pickSlot(idx) {
+    if (!this.conn) return;
+    const slot = this.state.slots[idx];
+    this.conn.send({ type: 'join', playerIdx: idx, name: (this.state.you.name || '').trim() || (slot && slot.name) });
+  }
+
+  onNetMessage(m) {
+    if (m.type === 'state') {
+      const v = m.view;
+      const patch = {
+        stocks: v.game.stocks, players: v.game.players, round: v.game.round,
+        news: v.game.news, transactions: v.game.transactions,
+        gameName: v.game.gameName, mode: v.game.mode,
+        netRole: v.role, pendingQueue: v.queue || [], slots: v.slots || [],
+      };
+      if (v.role === 'player') {
+        patch.you = v.you;
+        patch.activePlayer = (typeof v.you.playerIdx === 'number') ? v.you.playerIdx : 0;
+        patch.tradePlayerIdx = patch.activePlayer;
+        patch.phase = 'player';
+        if (!this.state.stocks.length) patch.tradeStockId = v.game.stocks[0] ? v.game.stocks[0].id : 'BPI';
+      } else if (v.role === 'host') {
+        patch.phase = 'market';
+      } else {
+        patch.phase = 'pickPlayer'; // spectator still choosing a slot
+      }
+      this.setState(patch);
+    } else if (m.type === 'error') {
+      this.showToast(m.error, 'error');
+    } else if (m.type === 'idle') {
+      // Connected but the host hasn't started the game yet.
+      if (this.state.netRole !== 'host') this.setState({ phase: 'pickPlayer', slots: [] });
+    }
+  }
+
+  queueOrderNet() {
+    if (!this.conn) return;
+    const { tradeStockId, tradeAction, tradeQty, tradeMargin } = this.state;
+    const qty = parseInt(tradeQty, 10);
+    if (!qty || qty <= 0) { this.showToast('Enter a quantity', 'error'); return; }
+    this.conn.send({ type: 'order', order: { stockId: tradeStockId, action: tradeAction, qty, margin: tradeMargin } });
+    this.setState({ tradeQty: '' });
+    this.showToast('Order queued — waiting for host', 'success');
+  }
+  queueRepayNet() {
+    if (!this.conn) return;
+    const ap = this.state.players[this.state.activePlayer];
+    if (!ap || !ap.loan) { this.showToast('No loan to repay', 'error'); return; }
+    this.conn.send({ type: 'order', order: { action: 'repay', qty: ap.loan } });
+    this.showToast('Repayment request queued', 'success');
+  }
+  approvePending(id) { if (this.conn) this.conn.send({ type: 'approve', orderId: id }); }
+  rejectPending(id) { if (this.conn) this.conn.send({ type: 'reject', orderId: id }); }
 
   // ── Save / load (#1) ──
   onSave() {
@@ -161,6 +259,7 @@ class Component extends DCLogic {
   }
 
   advanceRound() {
+    if (this.state.netRole === 'host') { if (this.conn) this.conn.send({ type: 'advance' }); return; }
     const E = this.eng();
     const res = E.advanceRound(this.engineState());
     this.setState({ stocks: res.state.stocks, players: res.state.players, round: res.state.round, news: res.state.news });
@@ -286,9 +385,57 @@ class Component extends DCLogic {
     else if (tradeAction === 'sell' || tradeAction === 'short') estLabel = 'Collect (cash)';
     else estLabel = 'Pay (cash)';                                            // cash buy or cover
 
+    // ── Online multiplayer (#8) ──
+    const netRole = s.netRole;
+    const isHostOnline = netRole === 'host';
+    const connColor = s.connStatus === 'connected' ? G : (s.connStatus === 'reconnecting' ? Y : '#8b949e');
+
+    const orderLabel = (o) => {
+      const pn = (players[o.playerIdx] && players[o.playerIdx].name) || ('P' + o.playerIdx);
+      if (o.action === 'repay') return `${pn} · REPAY ${this.fmt(o.qty)}`;
+      const st = E.findStock(stocks, o.stockId);
+      const px = st ? this.fmt(st.price) : '';
+      return `${pn} · ${(o.action || '').toUpperCase()} ${o.qty} ${o.stockId} @ ${px}${o.margin ? ' (borrow)' : ''}`;
+    };
+    const myOrderLabel = (o) => {
+      if (o.action === 'repay') return `REPAY ${this.fmt(o.qty)}`;
+      return `${(o.action || '').toUpperCase()} ${o.qty} ${o.stockId}${o.margin ? ' (borrow)' : ''}`;
+    };
+    const hostPendingRows = (s.pendingQueue || []).map(q => ({
+      id: q.id, label: orderLabel(q.order),
+      onApprove: () => this.approvePending(q.id),
+      onReject: () => this.rejectPending(q.id),
+    }));
+    const myPendingRows = (s.pendingQueue || []).map(q => ({ label: myOrderLabel(q.order) }));
+    const pickSlots = (s.slots || []).map(sl => ({
+      name: sl.name,
+      tag: sl.taken ? 'taken' : 'tap to join',
+      onClick: () => { if (!sl.taken) this.pickSlot(sl.idx); },
+      bg: sl.taken ? '#0d1117' : '#161b22',
+      border: sl.taken ? '#21262d' : '#30363d',
+      color: sl.taken ? '#484f58' : '#e6edf3',
+    }));
+
     return {
       isSetup: phase === 'setup',
       isMarket: phase === 'market',
+      isPlayer: phase === 'player',
+      isPickPlayer: phase === 'pickPlayer',
+      isHostOnline,
+      showTradePanel: netRole === 'local',
+      roomCode: s.roomCode,
+      connStatus: s.connStatus || 'connecting',
+      connColor,
+      hostPendingRows, hasHostPending: hostPendingRows.length > 0, noHostPending: hostPendingRows.length === 0,
+      myPendingRows, hasMyPending: myPendingRows.length > 0,
+      pickSlots, hasSlots: pickSlots.length > 0, pickWaiting: pickSlots.length === 0,
+      youName: (s.you && s.you.name) ? s.you.name : (ap ? ap.name : 'You'),
+      onHostOnline: () => this.hostOnline(),
+      joinCode: s.joinCode,
+      onJoinCodeChange: e => this.setJoinCode(e.target.value),
+      onStartJoin: () => this.startJoin(),
+      onQueueOrder: () => this.queueOrderNet(),
+      onQueueRepay: () => this.queueRepayNet(),
       gameName: s.gameName,
       onGameNameChange: e => this.setGameName(e.target.value),
       roundBtns, setupCountBtns, setupRows,

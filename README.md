@@ -105,34 +105,46 @@ rules there, not in the bundle.
 
 ---
 
-## Multiplayer (cloud, in progress)
+## Multiplayer (cloud)
 
 Players join one game from their own phones, watch the market live, and **queue
-orders that the host approves** before they hit the book. It uses a
+orders the host approves** — nothing is filled automatically. It uses a
 host-authoritative model on [PartyKit](https://www.partykit.io/) (Cloudflare
 Durable Objects): the server holds the only copy of the game state and runs the
-same `src/engine.js` rules; clients only *propose* orders.
+same `src/engine.js` rules; clients only *propose*.
 
-- `src/room.js` — the room reducer (join / queue / approve / reject / advance), pure and unit-tested
-- `party/server.js` — the PartyKit server: one Durable Object per room, wraps the room reducer, persists state, broadcasts to all clients
-- Concurrency is safe by construction: each room is single-threaded and the server is the only writer (see `party/server.js`)
+**The flow**
 
-**Status:** authoritative server + room logic are done and tested; the client
-host/player views are the next step.
+1. On one screen (laptop/tablet), set the game up and click **📡 HOST ONLINE** — you get a 4-character **room code**.
+2. Each player opens the app on their phone, types the code, and taps their name.
+3. Players get a phone-friendly view — market, news, leaderboard, their own positions/P&L — and **queue** buy / sell / short / cover / repay orders.
+4. The host sees a **Pending Approvals** panel and approves or rejects each one; approved orders fill at the current price. The host drives **Advance Round**.
+
+**How it's built**
+
+- `src/room.js` — room reducer (join / queue / approve / reject / advance), pure and unit-tested; orders are server-stamped with the member's slot (anti-spoof)
+- `party/server.js` — PartyKit server: one Durable Object per room, wraps the reducer, persists across hibernation, sends each connection its own view
+- `src/net.js` — the client's dependency-free reconnecting WebSocket
+- Player/host views live in the same `index.html` (no separate build)
+- **Concurrency is safe by construction:** each room is single-threaded and the server is the only writer
 
 ### Setting it up
 
 Requires **Node 18+** (PartyKit's CLI needs it).
 
 ```bash
-npm install                 # installs partykit (dev/deploy) + partysocket (client)
-npm run party:dev           # run the server locally at 127.0.0.1:1999
+npm install
+npm run party:dev           # server + client at http://127.0.0.1:1999
 # deploy to the cloud (one-time GitHub login, free tier):
 npx partykit login
 npm run party:deploy        # → https://monopoly-markets.<your-user>.partykit.dev
 ```
 
-Point the client at that URL and players connect with a room code.
+**Pointing the client at the server.** The client auto-uses its own origin, so
+the simplest path is to serve `index.html` from the same place as the server
+(PartyKit can host static assets). Otherwise open the client with
+`?host=<your-app>.<user>.partykit.dev` (or set `window.PARTYKIT_HOST`); it
+defaults to `127.0.0.1:1999` for local dev.
 
 ---
 

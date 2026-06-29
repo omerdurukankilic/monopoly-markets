@@ -40,13 +40,51 @@
         </sc-for>
       </div>
 
-      <button onclick="{{ onLaunch }}" style="width:100%; height:50px; background:#238636; border:1px solid #2ea043; border-radius:8px; color:#fff; font:700 15px Inter,system-ui; letter-spacing:0.5px; cursor:pointer;">▶  LAUNCH MARKET</button>
+      <button onclick="{{ onLaunch }}" style="width:100%; height:50px; background:#238636; border:1px solid #2ea043; border-radius:8px; color:#fff; font:700 15px Inter,system-ui; letter-spacing:0.5px; cursor:pointer;">▶  LAUNCH LOCAL GAME</button>
+      <div style="margin-top:8px; color:#484f58; font:12px Inter,system-ui; text-align:center;">One screen, passed around the table.</div>
 
       <label style="display:block; margin-top:14px; text-align:center; cursor:pointer;">
         <span style="color:#58a6ff; font:13px Inter,system-ui;">📂 Load a saved game (.json)</span>
         <input type="file" accept="application/json,.json" onchange="{{ onLoadFile }}" style="display:none;">
       </label>
-      <div style="margin-top:10px; color:#484f58; font:12px Inter,system-ui; text-align:center; line-height:1.6;">Players trade against their own tabletop Monopoly cash —<br>the app tracks positions, P&amp;L and a leaderboard.</div>
+
+      <!-- Online multiplayer -->
+      <div style="margin:28px 0 16px; display:flex; align-items:center; gap:12px;">
+        <div style="height:1px; background:#21262d; flex:1;"></div>
+        <span style="color:#484f58; font:11px Inter,system-ui; letter-spacing:1.5px; text-transform:uppercase;">Or play on phones</span>
+        <div style="height:1px; background:#21262d; flex:1;"></div>
+      </div>
+      <button onclick="{{ onHostOnline }}" style="width:100%; height:46px; background:#1a1a3d; border:1px solid #58a6ff; border-radius:8px; color:#58a6ff; font:700 14px Inter,system-ui; letter-spacing:0.3px; cursor:pointer;">📡 HOST ONLINE GAME</button>
+      <div style="margin-top:8px; color:#484f58; font:12px Inter,system-ui; text-align:center;">You run the board; players join from their phones and queue trades for you to approve.</div>
+
+      <div style="margin-top:16px; display:flex; gap:8px;">
+        <input value="{{ joinCode }}" onchange="{{ onJoinCodeChange }}" placeholder="ROOM CODE" maxlength="6" style="flex:1; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:0 14px; height:46px; color:#e6edf3; font:700 16px 'JetBrains Mono',monospace; letter-spacing:3px; text-transform:uppercase; outline:none; text-align:center;">
+        <button onclick="{{ onStartJoin }}" style="flex-shrink:0; padding:0 22px; height:46px; background:#161b22; border:1px solid #30363d; border-radius:8px; color:#e6edf3; font:700 14px Inter,system-ui; cursor:pointer;">JOIN →</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ═══════════════ PICK PLAYER (joining a hosted game) ═══════════════ -->
+<sc-if value="{{ isPickPlayer }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0d1117; padding:20px;">
+    <div style="width:100%; max-width:420px;">
+      <div style="text-align:center; margin-bottom:8px; font:700 18px 'JetBrains Mono',monospace; color:#e6edf3;">JOIN GAME</div>
+      <div style="text-align:center; margin-bottom:24px; font:13px Inter,system-ui; color:{{ connColor }};">Room {{ roomCode }} · {{ connStatus }}</div>
+
+      <sc-if value="{{ pickWaiting }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:40px 16px; text-align:center; color:#484f58; font:14px Inter,system-ui; line-height:1.7;">Connecting to the game…<br>Make sure the host has started it.</div>
+      </sc-if>
+
+      <sc-if value="{{ hasSlots }}" hint-placeholder-val="{{ false }}">
+        <div style="color:#8b949e; font:12px Inter,system-ui; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; text-align:center;">Who are you?</div>
+        <sc-for list="{{ pickSlots }}" as="slot" hint-placeholder-count="3">
+          <button onclick="{{ slot.onClick }}" style="width:100%; height:54px; margin-bottom:10px; background:{{ slot.bg }}; border:1px solid {{ slot.border }}; border-radius:10px; color:{{ slot.color }}; font:600 16px Inter,system-ui; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 18px;">
+            <span>{{ slot.name }}</span>
+            <span style="font:600 12px Inter,system-ui; color:#484f58;">{{ slot.tag }}</span>
+          </button>
+        </sc-for>
+      </sc-if>
     </div>
   </div>
 </sc-if>
@@ -67,6 +105,10 @@
         <span style="font:700 13px 'JetBrains Mono',monospace; color:#e6edf3; letter-spacing:-0.3px; white-space:nowrap;">{{ gameName }}</span>
       </div>
       <div style="background:#0d1117; border:1px solid #30363d; border-radius:4px; padding:3px 10px; font:700 11px 'JetBrains Mono',monospace; color:#e3b341; flex-shrink:0; letter-spacing:1px;">RD {{ round }}</div>
+      <sc-if value="{{ isHostOnline }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#1a1a3d; border:1px solid #58a6ff; border-radius:4px; padding:3px 10px; font:700 11px 'JetBrains Mono',monospace; color:#58a6ff; flex-shrink:0; letter-spacing:2px;" title="Players join with this code">ROOM {{ roomCode }}</div>
+        <div style="font:600 11px Inter,system-ui; color:{{ connColor }}; flex-shrink:0;">● {{ connStatus }}</div>
+      </sc-if>
       <div style="width:1px; height:28px; background:#21262d; flex-shrink:0;"></div>
       <div style="display:flex; gap:0; flex:1; overflow-x:auto; height:100%; align-items:stretch;">
         <sc-for list="{{ playerTabs }}" as="tab" hint-placeholder-count="3">
@@ -232,8 +274,29 @@
         </sc-if>
       </div>
 
-      <!-- COL 3: Leaderboard + News Feed -->
+      <!-- COL 3: Approvals (host) + Leaderboard + News Feed -->
       <div style="overflow-y:auto; padding:14px 12px;">
+
+        <sc-if value="{{ isHostOnline }}" hint-placeholder-val="{{ false }}">
+          <div style="font:700 10px Inter,system-ui; letter-spacing:1.5px; text-transform:uppercase; color:#58a6ff; margin-bottom:10px;">Pending Approvals</div>
+          <sc-if value="{{ noHostPending }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:14px; text-align:center; color:#30363d; font:12px Inter,system-ui; border:1px dashed #21262d; border-radius:6px; margin-bottom:18px;">No orders waiting. Players' trades appear here for you to approve.</div>
+          </sc-if>
+          <sc-if value="{{ hasHostPending }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-bottom:18px;">
+              <sc-for list="{{ hostPendingRows }}" as="row" hint-placeholder-count="2">
+                <div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+                  <div style="font:600 13px Inter,system-ui; color:#e6edf3; margin-bottom:8px;">{{ row.label }}</div>
+                  <div style="display:flex; gap:8px;">
+                    <button onclick="{{ row.onApprove }}" style="flex:1; height:34px; background:#1a4329; border:1px solid #3fb950; border-radius:6px; color:#3fb950; font:700 12px Inter,system-ui; cursor:pointer;">✓ APPROVE</button>
+                    <button onclick="{{ row.onReject }}" style="flex:1; height:34px; background:#3d1a1a; border:1px solid #f85149; border-radius:6px; color:#f85149; font:700 12px Inter,system-ui; cursor:pointer;">✕ REJECT</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </sc-if>
+
         <div style="font:700 10px Inter,system-ui; letter-spacing:1.5px; text-transform:uppercase; color:#484f58; margin-bottom:10px;">Leaderboard</div>
         <div style="margin-bottom:18px;">
           <sc-for list="{{ lbRows }}" as="row" hint-placeholder-count="3">
@@ -268,7 +331,8 @@
       </div>
     </div>
 
-    <!-- ── TRADE PANEL ── -->
+    <!-- ── TRADE PANEL (local games only; online players trade from their phones) ── -->
+    <sc-if value="{{ showTradePanel }}" hint-placeholder-val="{{ true }}">
     <div style="background:#161b22; border-top:1px solid #21262d; padding:11px 16px; flex-shrink:0;">
       <div style="font:700 10px Inter,system-ui; letter-spacing:1.5px; text-transform:uppercase; color:#484f58; margin-bottom:9px;">Trade Execution</div>
       <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
@@ -326,6 +390,7 @@
         </div>
       </div>
     </div>
+    </sc-if>
 
     <!-- ── TRANSACTION LOG ── -->
     <div style="background:#0a0e13; border-top:1px solid #21262d; padding:8px 16px 8px; flex-shrink:0; height:118px; overflow-y:auto;">
@@ -359,5 +424,157 @@
       </sc-if>
     </div>
 
+  </div>
+</sc-if>
+
+<!-- ═══════════════ PLAYER VIEW (mobile) ═══════════════ -->
+<sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh; background:#0d1117; max-width:520px; margin:0 auto; padding:0 0 40px;">
+
+    <!-- Toast -->
+    <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed; top:10px; left:10px; right:10px; background:{{ toastBg }}; color:#0d1117; border-radius:8px; padding:12px 16px; font:700 13px Inter,system-ui; z-index:1000; text-align:center; box-shadow:0 4px 16px rgba(0,0,0,0.5);">{{ toastMsg }}</div>
+    </sc-if>
+
+    <!-- Header -->
+    <div style="position:sticky; top:0; z-index:5; background:#161b22; border-bottom:1px solid #21262d; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
+      <div>
+        <div style="font:700 15px 'JetBrains Mono',monospace; color:#e6edf3;">{{ youName }}</div>
+        <div style="font:11px Inter,system-ui; color:#484f58;">{{ gameName }} · Round {{ round }}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font:700 18px 'JetBrains Mono',monospace; color:{{ apTotalColor }};">{{ apTotal }}</div>
+        <div style="font:10px Inter,system-ui; color:{{ connColor }};">● {{ connStatus }}</div>
+      </div>
+    </div>
+
+    <div style="padding:14px 16px;">
+
+      <!-- Account cards -->
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px;">
+        <div style="background:#161b22; border:1px solid #21262d; border-radius:10px; padding:12px;">
+          <div style="font:10px Inter,system-ui; color:#484f58; text-transform:uppercase; margin-bottom:5px;">P&amp;L</div>
+          <div style="font:700 15px 'JetBrains Mono',monospace; color:{{ apRealizedColor }};">{{ apRealized }}</div>
+        </div>
+        <div style="background:#161b22; border:1px solid #21262d; border-radius:10px; padding:12px;">
+          <div style="font:10px Inter,system-ui; color:#484f58; text-transform:uppercase; margin-bottom:5px;">Holdings</div>
+          <div style="font:700 15px 'JetBrains Mono',monospace; color:#e6edf3;">{{ apPortValue }}</div>
+        </div>
+        <div style="background:#161b22; border:1px solid #21262d; border-radius:10px; padding:12px;">
+          <div style="font:10px Inter,system-ui; color:#484f58; text-transform:uppercase; margin-bottom:5px;">Loan</div>
+          <div style="font:700 15px 'JetBrains Mono',monospace; color:#f85149;">{{ apLoan }}</div>
+        </div>
+      </div>
+
+      <!-- Margin status / repay -->
+      <sc-if value="{{ apHasLoan }}" hint-placeholder-val="{{ false }}">
+        <div style="background:{{ apMarginBg }}; border:1px solid {{ apMarginBorder }}; border-radius:10px; padding:12px 14px; margin-bottom:14px;">
+          <div style="font:600 13px Inter,system-ui; color:{{ apMarginBorder }}; margin-bottom:4px;">{{ apMarginLabel }}</div>
+          <div style="font:600 11px 'JetBrains Mono',monospace; color:#8b949e; margin-bottom:10px;">Loan {{ apLoan }} · Collateral {{ apCollateral }} · {{ apMarginRatioStr }}</div>
+          <button onclick="{{ onQueueRepay }}" style="width:100%; height:42px; background:#238636; border:1px solid #2ea043; border-radius:8px; color:#fff; font:700 13px Inter,system-ui; cursor:pointer;">QUEUE LOAN REPAYMENT</button>
+        </div>
+      </sc-if>
+
+      <!-- Order composer -->
+      <div style="background:#161b22; border:1px solid #30363d; border-radius:12px; padding:14px; margin-bottom:14px;">
+        <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#8b949e; margin-bottom:10px;">Place an Order</div>
+
+        <select value="{{ tradeStockId }}" onchange="{{ onTradeStockChange }}" style="width:100%; height:46px; background:#0d1117; border:1px solid #30363d; border-radius:8px; color:#e6edf3; font:14px 'JetBrains Mono',monospace; padding:0 12px; margin-bottom:10px; outline:none;">
+          <sc-for list="{{ tradeStockOptions }}" as="opt" hint-placeholder-count="8">
+            <option value="{{ opt.value }}">{{ opt.label }}</option>
+          </sc-for>
+        </select>
+
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+          <sc-for list="{{ tradeActions }}" as="a" hint-placeholder-count="4">
+            <button onclick="{{ a.onClick }}" style="flex:1; height:42px; border-radius:8px; border:1px solid {{ a.border }}; background:{{ a.bg }}; color:{{ a.color }}; font:700 12px 'JetBrains Mono',monospace; cursor:pointer;">{{ a.label }}</button>
+          </sc-for>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+          <input type="number" value="{{ tradeQty }}" onchange="{{ onTradeQtyChange }}" placeholder="Qty" min="1" inputmode="numeric" style="flex:1; height:46px; background:#0d1117; border:1px solid #30363d; border-radius:8px; color:#e6edf3; font:16px 'JetBrains Mono',monospace; padding:0 14px; outline:none;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex-shrink:0;">
+            <input type="checkbox" checked="{{ tradeMargin }}" onchange="{{ onToggleMargin }}" style="width:20px; height:20px; accent-color:#58a6ff;">
+            <span style="font:13px Inter,system-ui; color:#8b949e;">Borrow</span>
+          </label>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 2px;">
+          <span style="font:12px Inter,system-ui; color:#484f58;">{{ estLabel }}</span>
+          <span style="font:700 16px 'JetBrains Mono',monospace; color:#e3b341;">{{ estTotal }}</span>
+        </div>
+
+        <button onclick="{{ onQueueOrder }}" style="width:100%; height:50px; background:#238636; border:1px solid #2ea043; border-radius:10px; color:#fff; font:700 15px Inter,system-ui; cursor:pointer;">QUEUE ORDER →</button>
+        <div style="margin-top:8px; text-align:center; font:11px Inter,system-ui; color:#484f58;">Sent to the host to approve — not filled until they do.</div>
+      </div>
+
+      <!-- My pending orders -->
+      <sc-if value="{{ hasMyPending }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-bottom:14px;">
+          <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#8b949e; margin-bottom:8px;">Waiting for Approval</div>
+          <sc-for list="{{ myPendingRows }}" as="row" hint-placeholder-count="2">
+            <div style="background:#1a1007; border:1px solid #e3b341; border-radius:8px; padding:10px 12px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
+              <span style="font:600 13px Inter,system-ui; color:#e6edf3;">{{ row.label }}</span>
+              <span style="font:600 10px Inter,system-ui; color:#e3b341;">⏳ pending</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- Your positions -->
+      <sc-if value="{{ hasPortRows }}" hint-placeholder-val="{{ false }}">
+        <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#8b949e; margin-bottom:8px;">Your Holdings</div>
+        <sc-for list="{{ portRows }}" as="row" hint-placeholder-count="2">
+          <div style="display:flex; align-items:center; justify-content:space-between; background:#161b22; border:1px solid #21262d; border-radius:8px; padding:10px 12px; margin-bottom:6px;">
+            <div><span style="font:700 13px 'JetBrains Mono',monospace; color:#58a6ff;">{{ row.id }}</span> <span style="font:12px 'JetBrains Mono',monospace; color:#8b949e;">{{ row.shares }} @ {{ row.avgStr }}</span></div>
+            <div style="text-align:right;"><div style="font:600 13px 'JetBrains Mono',monospace; color:#c9d1d9;">{{ row.valueStr }}</div><div style="font:600 11px 'JetBrains Mono',monospace; color:{{ row.pnlColor }};">{{ row.pnlStr }}</div></div>
+          </div>
+        </sc-for>
+      </sc-if>
+      <sc-if value="{{ hasShortRows }}" hint-placeholder-val="{{ false }}">
+        <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#bc8cff; margin:10px 0 8px;">Your Shorts</div>
+        <sc-for list="{{ shortRows }}" as="row" hint-placeholder-count="1">
+          <div style="display:flex; align-items:center; justify-content:space-between; background:#161b22; border:1px solid #21262d; border-radius:8px; padding:10px 12px; margin-bottom:6px;">
+            <div><span style="font:700 13px 'JetBrains Mono',monospace; color:#bc8cff;">{{ row.id }}</span> <span style="font:12px 'JetBrains Mono',monospace; color:#8b949e;">{{ row.shares }} @ {{ row.openStr }}</span></div>
+            <div style="text-align:right;"><div style="font:600 12px 'JetBrains Mono',monospace; color:#8b949e;">cover {{ row.coverStr }}</div><div style="font:600 11px 'JetBrains Mono',monospace; color:{{ row.pnlColor }};">{{ row.pnlStr }}</div></div>
+          </div>
+        </sc-for>
+      </sc-if>
+
+      <!-- Market -->
+      <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#8b949e; margin:18px 0 8px;">Market — tap to trade</div>
+      <sc-for list="{{ stockRows }}" as="stock" hint-placeholder-count="8">
+        <div onclick="{{ stock.onClick }}" style="display:flex; align-items:center; justify-content:space-between; padding:11px 12px; border-radius:8px; background:{{ stock.bg }}; border:1px solid {{ stock.borderColor }}; margin-bottom:5px; cursor:pointer;">
+          <div style="min-width:0;"><span style="font:700 13px 'JetBrains Mono',monospace; color:#58a6ff;">{{ stock.id }}</span> <span style="font:12px Inter,system-ui; color:#6e7681;">{{ stock.name }}</span></div>
+          <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            {{ stock.sparkline }}
+            <div style="text-align:right; min-width:64px;"><div style="font:600 13px 'JetBrains Mono',monospace; color:#e6edf3;">{{ stock.priceStr }}</div><div style="font:600 11px 'JetBrains Mono',monospace; color:{{ stock.chgColor }};">{{ stock.chgPctStr }}</div></div>
+          </div>
+        </div>
+      </sc-for>
+
+      <!-- News -->
+      <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#8b949e; margin:18px 0 8px;">News</div>
+      <sc-if value="{{ noNews }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:16px; text-align:center; color:#30363d; font:13px Inter,system-ui; border:1px dashed #21262d; border-radius:8px;">No market events yet.</div>
+      </sc-if>
+      <sc-for list="{{ newsItems }}" as="item" hint-placeholder-count="3">
+        <div style="background:#161b22; border-left:3px solid {{ item.color }}; border-radius:6px; padding:10px 12px; margin-bottom:6px;">
+          <div style="display:flex; gap:6px; margin-bottom:4px;"><span style="font:700 10px 'JetBrains Mono',monospace; color:{{ item.color }};">{{ item.stockId }} {{ item.arrow }} {{ item.impactStr }}</span></div>
+          <div style="font:13px/1.4 Inter,system-ui; color:#c9d1d9;">{{ item.headline }}</div>
+        </div>
+      </sc-for>
+
+      <!-- Leaderboard -->
+      <div style="font:700 11px Inter,system-ui; letter-spacing:1px; text-transform:uppercase; color:#8b949e; margin:18px 0 8px;">Leaderboard</div>
+      <sc-for list="{{ lbRows }}" as="row" hint-placeholder-count="3">
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:5px; background:{{ row.bg }}; border:1px solid {{ row.border }}; border-radius:8px;">
+          <span style="font:700 13px 'JetBrains Mono',monospace; color:#484f58; width:20px;">{{ row.rank }}</span>
+          <span style="font:600 14px Inter,system-ui; color:#e6edf3; flex:1;">{{ row.name }}</span>
+          <span style="font:700 14px 'JetBrains Mono',monospace; color:{{ row.worthColor }};">{{ row.worthStr }}</span>
+        </div>
+      </sc-for>
+
+    </div>
   </div>
 </sc-if>

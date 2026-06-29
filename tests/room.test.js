@@ -105,4 +105,14 @@ test('a player view shows only their own queued orders and their player index', 
   assert.strictEqual(v.queue[0].order.playerIdx, 1);
 });
 
+test('viewFor exposes which player slots are taken (for the join screen)', () => {
+  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
+  const v = Room.viewFor(r, 'spectator-conn');
+  assert.strictEqual(v.role, 'spectator');
+  assert.strictEqual(v.slots.length, 3);
+  assert.strictEqual(v.slots[0].taken, true);
+  assert.strictEqual(v.slots[1].taken, false);
+  assert.strictEqual(v.slots[0].name, 'Maya');
+});
+
 run();

@@ -124,9 +124,20 @@ function viewFor(room, connId) {
   var queue = isHost
     ? room.queue.slice()
     : room.queue.filter(function (q) { return typeof member.playerIdx === 'number' && q.order.playerIdx === member.playerIdx; });
+
+  // Which player slots are already claimed — lets the join screen disable them.
+  var taken = {};
+  Object.keys(room.members).forEach(function (c) {
+    var m = room.members[c];
+    if (m.role === 'player' && typeof m.playerIdx === 'number') taken[m.playerIdx] = true;
+  });
+  var slots = room.game.players.map(function (p, i) { return { idx: i, name: p.name, taken: !!taken[i] }; });
+
   return {
     role: member.role,
     you: { playerIdx: member.playerIdx, name: member.name },
+    roomReady: true,
+    slots: slots,
     game: room.game,
     queue: queue,
   };
