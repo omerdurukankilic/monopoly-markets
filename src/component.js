@@ -131,7 +131,9 @@ class Component extends DCLogic {
   }
 
   // ── Market actions ──
-  selectPlayer(i) { this.setState({ activePlayer: i }); }
+  // Switching to a player's tab also targets the trade panel at them, so the
+  // host doesn't have to re-pick the player in the order form.
+  selectPlayer(i) { this.setState({ activePlayer: i, tradePlayerIdx: i }); }
   showToast(msg, type = 'info') {
     this.setState({ toast: { msg, type } });
     setTimeout(() => this.setState({ toast: null }), 3500);

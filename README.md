@@ -50,10 +50,10 @@ A Bloomberg-style stock trading module for Monopoly. Players trade fictional sto
 | **SELL** | Sell shares; proceeds first pay down any loan, the rest is your profit |
 | **SHORT** | Borrow and sell shares now; profit if the price falls |
 | **COVER** | Buy back shorted shares to close the position (the panel shows the cover cost) |
-| **Borrow to buy** | Buy on credit — the cost becomes a loan and the shares are its collateral |
+| **Borrow to buy** | Pay later — the cost becomes a loan (no cash now) and the shares are its collateral |
 | **REPAY LOAN** | Pay a loan back from tabletop cash (per player, on their tab) |
 
-**Dividends** are paid each round based on shares held × the stock's annual yield (prorated per round). Short positions do not pay or receive dividends.
+**Dividends** are paid into each player's P&L every round, equal to shares held × the stock's current price × its yield. Short positions do not pay or receive dividends.
 
 **Margin call:** a loan is force-liquidated on the next round if it exceeds **80%** of its collateral's value. Selling all the collateral repays the loan; any remaining debt is paid from the player's tabletop Monopoly cash. Each player's tab shows their loan, collateral and ratio.
 
@@ -61,9 +61,9 @@ A Bloomberg-style stock trading module for Monopoly. Players trade fictional sto
 
 ## Stocks Reference
 
-| Ticker | Company | Sector | Div. Yield | Volatility |
+| Ticker | Company | Sector | Yield / Round | Volatility |
 |--------|---------|--------|-----------|-----------|
-| BPI | Boardwalk Properties Inc | Real Estate | 3.0% | Medium |
+| BPI | Boardwalk Properties | Real Estate | 3.0% | Medium |
 | CCF | Community Chest Financial | Finance | 5.0% | Medium-High |
 | RAIL | Railroad Continental | Transport | 2.0% | Low-Medium |
 | UTIL | Utility Monopoly Corp | Utilities | 4.0% | Low |
