@@ -1,0 +1,10 @@
+{
+  "name": "monopoly-markets",
+  "version": "2.0.0",
+  "description": "Bloomberg-style stock trading module for Monopoly",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/engine.test.js",
+    "build": "node build.js"
+  }
+}
