@@ -25,6 +25,15 @@ if (!engine && typeof window !== 'undefined') engine = window.GameEngine;
 if (!engine && typeof globalThis !== 'undefined' && globalThis.GameEngine) engine = globalThis.GameEngine;
 function setEngine(e) { engine = e; }
 
+// Defensive caps — a client that knows the room code is otherwise untrusted.
+var MAX_PLAYERS = 12;
+var MAX_PENDING_PER_PLAYER = 20;
+var MAX_NAME_LEN = 24;
+
+function cleanName(name) {
+  return String(name == null ? '' : name).replace(/\s+/g, ' ').trim().slice(0, MAX_NAME_LEN);
+}
+
 function create(opts) {
   return {
     game: engine.createInitialState(opts || {}),
@@ -62,17 +71,19 @@ function claimHost(room, connId, clientId) {
 // Add a player (new name) or re-attach a returning one by clientId.
 function addPlayer(room, connId, clientId, name) {
   var r = clone(room);
+  var clean = cleanName(name);
   if (clientId && r.clients[clientId] != null) {
     var idx = r.clients[clientId];
     r.members[connId] = { role: 'player', clientId: clientId, playerIdx: idx };
-    if (name) {
+    if (clean) {
       r.game = Object.assign({}, r.game, {
-        players: r.game.players.map(function (p, i) { return i === idx ? Object.assign({}, p, { name: name }) : p; }),
+        players: r.game.players.map(function (p, i) { return i === idx ? Object.assign({}, p, { name: clean }) : p; }),
       });
     }
     return { room: r, playerIdx: idx };
   }
-  r.game = engine.addPlayer(r.game, name || ('Player ' + (r.game.players.length + 1)));
+  if (r.game.players.length >= MAX_PLAYERS) return { room: room, error: 'Room is full' };
+  r.game = engine.addPlayer(r.game, clean || ('Player ' + (r.game.players.length + 1)));
   var newIdx = r.game.players.length - 1;
   if (clientId) r.clients[clientId] = newIdx;
   r.members[connId] = { role: 'player', clientId: clientId || null, playerIdx: newIdx };
@@ -91,6 +102,8 @@ function queueOrder(room, connId, order) {
   if (!room.started) return fail(room, 'The game has not started yet');
   var member = room.members[connId];
   if (!member || typeof member.playerIdx !== 'number') return fail(room, 'Join the game before placing orders');
+  var pending = room.queue.filter(function (q) { return q.order.playerIdx === member.playerIdx; }).length;
+  if (pending >= MAX_PENDING_PER_PLAYER) return fail(room, 'Too many pending orders — wait for the host to clear some');
   var r = clone(room);
   var id = 'o' + r.nextOrderId++;
   // Stamp the player from the trusted membership, never the client payload.

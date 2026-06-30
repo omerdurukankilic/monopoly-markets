@@ -122,4 +122,23 @@ test('an unjoined connection sees a spectator view with the started flag', () =>
   assert.strictEqual(v.started, false);
 });
 
+// ── Abuse limits (a malicious client knows the room code) ───────────────────
+test('queueOrder caps how many pending orders one player can stack', () => {
+  let r = Room.startGame(Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room);
+  for (let i = 0; i < 20; i++) r = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 1 }).room;
+  const res = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 1 });
+  assert.ok(res.error); // 21st is rejected
+});
+test('addPlayer caps the number of players in a room', () => {
+  let r = fresh();
+  for (let i = 0; i < 12; i++) r = Room.addPlayer(r, 'c' + i, 'cid' + i, 'P' + i).room;
+  const res = Room.addPlayer(r, 'cX', 'cidX', 'Late');
+  assert.ok(res.error);
+  assert.strictEqual(res.room.game.players.length, 12);
+});
+test('a long player name is truncated when added', () => {
+  const res = Room.addPlayer(fresh(), 'c1', 'cid1', 'x'.repeat(200));
+  assert.ok(res.room.game.players[0].name.length <= 24);
+});
+
 run();

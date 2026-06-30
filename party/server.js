@@ -40,12 +40,23 @@ export default class GameServer {
     try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
-      case 'host': // open the lobby for a new game (no players yet)
-        this.room = Room.claimHost(Room.create(msg.opts || { names: [] }), sender.id, msg.clientId);
+      case 'host': { // open the lobby for a new game (no players yet)
+        const r = this.room;
+        // Only the original host (matched by their device's clientId) may
+        // (re)claim a room — otherwise anyone who knows the code could reset
+        // the game and seize control.
+        if (r && r.hostClientId && msg.clientId !== r.hostClientId) {
+          return this.sendError(sender, 'This room already has a host');
+        }
+        this.room = (r && r.game && r.hostClientId)
+          ? Room.claimHost(r, sender.id, msg.clientId)   // host reconnecting — keep state
+          : Room.claimHost(Room.create(msg.opts || { names: [] }), sender.id, msg.clientId);
         break;
+      }
 
       case 'join': { // a player adds themselves with their own name
         const res = Room.addPlayer(this.requireRoom(), sender.id, msg.clientId, msg.name);
+        if (res.error) return this.sendError(sender, res.error);
         this.room = res.room;
         break;
       }
