@@ -110,6 +110,11 @@ function createPlayer(name) {
   };
 }
 
+// Append a player to an existing game (Kahoot-style dynamic join). Pure.
+function addPlayer(state, name) {
+  return Object.assign({}, state, { players: state.players.concat([createPlayer(name)]) });
+}
+
 function createInitialState(opts) {
   opts = opts || {};
   var mode = opts.mode || 'integer';
@@ -382,6 +387,7 @@ var ENGINE = {
   makeInitialHistory: makeInitialHistory,
   createStocks: createStocks,
   createPlayer: createPlayer,
+  addPlayer: addPlayer,
   createInitialState: createInitialState,
   findStock: findStock,
   longValue: longValue,

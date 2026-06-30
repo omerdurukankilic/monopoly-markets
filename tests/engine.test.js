@@ -42,6 +42,22 @@ test('roundMoney five rounds to nearest multiple of five', () => {
   assert.strictEqual(E.roundMoney(42, 'five'), 40);
 });
 
+// ── Dynamic players (#8 Kahoot-style join) ──────────────────────────────────
+test('createInitialState with an empty name list starts with no players', () => {
+  const s = E.createInitialState({ names: [], mode: 'integer' });
+  assert.strictEqual(s.players.length, 0);
+  assert.strictEqual(s.stocks.length, 8);
+});
+test('addPlayer appends a fresh player without disturbing existing ones', () => {
+  let s = E.createInitialState({ names: [], mode: 'integer' });
+  s = E.addPlayer(s, 'Maya');
+  s = E.addPlayer(s, 'Sam');
+  assert.strictEqual(s.players.length, 2);
+  assert.strictEqual(s.players[0].name, 'Maya');
+  assert.strictEqual(s.players[1].name, 'Sam');
+  assert.strictEqual(s.players[1].realized, 0);
+});
+
 // ── Player setup (#5: no cash balance) ──────────────────────────────────────
 test('createPlayer starts with zero virtual P&L and no positions', () => {
   const p = E.createPlayer('Maya');

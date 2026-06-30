@@ -3,116 +3,123 @@ const { test, run, assert } = require('./harness');
 const Room = require('../src/room');
 
 function seq(values) { let i = 0; return () => values[Math.min(i++, values.length - 1)]; }
-function fresh() { return Room.create({ gameName: 'Game', mode: 'integer', names: ['Maya', 'Sam', 'Lee'] }); }
+// Online host games start with NO players — players add themselves (Kahoot-style).
+function fresh() { return Room.create({ gameName: 'Game', mode: 'integer', names: [] }); }
 
-// ── Membership & roles ──────────────────────────────────────────────────────
-test('create starts with a game, no members and an empty queue', () => {
+// ── Lobby & membership ──────────────────────────────────────────────────────
+test('create starts empty: no players, not started, no members', () => {
   const r = fresh();
-  assert.strictEqual(r.game.players.length, 3);
-  assert.deepStrictEqual(r.queue, []);
+  assert.strictEqual(r.game.players.length, 0);
+  assert.strictEqual(r.started, false);
   assert.deepStrictEqual(Object.keys(r.members), []);
 });
 test('claimHost marks the connection as host', () => {
-  const r = Room.claimHost(fresh(), 'conn-h');
-  assert.strictEqual(r.members['conn-h'].role, 'host');
-  assert.strictEqual(r.hostConnId, 'conn-h');
+  const r = Room.claimHost(fresh(), 'h', 'host-client');
+  assert.strictEqual(r.members['h'].role, 'host');
+  assert.strictEqual(r.hostConnId, 'h');
 });
-test('joinPlayer claims a player slot for a connection', () => {
-  const r = Room.joinPlayer(fresh(), 'conn-1', { playerIdx: 1 }).room;
-  assert.strictEqual(r.members['conn-1'].role, 'player');
-  assert.strictEqual(r.members['conn-1'].playerIdx, 1);
+test('addPlayer appends a player and assigns the connection', () => {
+  const res = Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya');
+  assert.strictEqual(res.playerIdx, 0);
+  assert.strictEqual(res.room.game.players.length, 1);
+  assert.strictEqual(res.room.game.players[0].name, 'Maya');
+  assert.strictEqual(res.room.members['c1'].playerIdx, 0);
 });
-test('joinPlayer rejects a slot that is already taken', () => {
-  let r = Room.joinPlayer(fresh(), 'conn-1', { playerIdx: 1 }).room;
-  const res = Room.joinPlayer(r, 'conn-2', { playerIdx: 1 });
-  assert.ok(res.error);
+test('a second client adds a second, distinct player', () => {
+  let r = Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room;
+  const res = Room.addPlayer(r, 'c2', 'cid2', 'Sam');
+  assert.strictEqual(res.playerIdx, 1);
+  assert.strictEqual(res.room.game.players.length, 2);
+  assert.strictEqual(res.room.game.players[1].name, 'Sam');
+});
+test('reconnecting with the same clientId rejoins the same player (no duplicate)', () => {
+  let r = Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room;
+  const res = Room.addPlayer(r, 'c1-reconnect', 'cid1', 'Maya');
+  assert.strictEqual(res.room.game.players.length, 1); // not duplicated
+  assert.strictEqual(res.playerIdx, 0);
+  assert.strictEqual(res.room.members['c1-reconnect'].playerIdx, 0);
 });
 
-// ── Queueing orders ─────────────────────────────────────────────────────────
-test('queueOrder appends a pending order stamped with the member player', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
-  const res = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 2 });
+// ── Starting & trading ──────────────────────────────────────────────────────
+test('startGame flips the started flag', () => {
+  assert.strictEqual(Room.startGame(fresh()).started, true);
+});
+test('queueOrder is rejected before the game has started', () => {
+  let r = Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room;
+  const res = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 1 });
+  assert.ok(res.error);
+});
+test('queueOrder works after start, stamped to the member player (anti-spoof)', () => {
+  let r = Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room;
+  r = Room.startGame(r);
+  const res = Room.queueOrder(r, 'c1', { playerIdx: 9, stockId: 'BPI', action: 'buy', qty: 2 });
   assert.strictEqual(res.error, undefined);
-  const q = res.room.queue;
-  assert.strictEqual(q.length, 1);
-  assert.strictEqual(q[0].status, 'pending');
-  assert.strictEqual(q[0].order.playerIdx, 0);   // server-stamped, not client-trusted
-  assert.ok(q[0].id);
-});
-test('queueOrder ignores a client-supplied playerIdx (anti-spoof)', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
-  const res = Room.queueOrder(r, 'c1', { playerIdx: 2, stockId: 'BPI', action: 'buy', qty: 1 });
   assert.strictEqual(res.room.queue[0].order.playerIdx, 0);
+  assert.ok(res.orderId);
 });
-test('queueOrder rejects a connection that has not claimed a player', () => {
-  const r = Room.claimHost(fresh(), 'h');
+test('queueOrder rejects a connection that has not joined', () => {
+  const r = Room.startGame(Room.claimHost(fresh(), 'h', 'hc'));
   const res = Room.queueOrder(r, 'h', { stockId: 'BPI', action: 'buy', qty: 1 });
   assert.ok(res.error);
 });
-
-// ── Approving / rejecting ───────────────────────────────────────────────────
-test('approveOrder applies a valid order to the game and clears it', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
+test('approveOrder applies a valid order and clears it', () => {
+  let r = Room.startGame(Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room);
   const queued = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 2 });
   r = queued.room;
   const res = Room.approveOrder(r, queued.orderId);
   assert.strictEqual(res.error, undefined);
   assert.strictEqual(res.room.game.players[0].portfolio.BPI.shares, 2);
-  assert.strictEqual(res.room.queue.find(q => q.id === queued.orderId), undefined); // removed
+  assert.strictEqual(res.room.queue.find(q => q.id === queued.orderId), undefined);
 });
 test('approveOrder surfaces an engine rejection without changing the game', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
-  r = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'sell', qty: 5 }).room; // owns nothing
-  const id = r.queue[0].id;
-  const res = Room.approveOrder(r, id);
+  let r = Room.startGame(Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room);
+  r = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'sell', qty: 5 }).room;
+  const res = Room.approveOrder(r, r.queue[0].id);
   assert.ok(res.error);
   assert.deepStrictEqual(res.room.game.players[0].portfolio, {});
 });
 test('rejectOrder drops a pending order without touching the game', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
+  let r = Room.startGame(Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room);
   r = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 2 }).room;
-  const id = r.queue[0].id;
-  r = Room.rejectOrder(r, id);
+  r = Room.rejectOrder(r, r.queue[0].id);
   assert.strictEqual(r.queue.length, 0);
   assert.deepStrictEqual(r.game.players[0].portfolio, {});
 });
-
-// ── Advancing ───────────────────────────────────────────────────────────────
 test('advance moves the game forward a round', () => {
-  const r = fresh();
+  const r = Room.startGame(Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room);
   const res = Room.advance(r, seq([0, 0, 0.46, 0.46, 0.46, 0.46, 0.46, 0.46, 0.46, 0.46]));
   assert.strictEqual(res.room.game.round, 2);
 });
 
 // ── Per-connection views ────────────────────────────────────────────────────
-test('the host view includes the full pending queue', () => {
-  let r = Room.claimHost(fresh(), 'h');
-  r = Room.joinPlayer(r, 'c1', { playerIdx: 0 }).room;
+test('the host view includes the lobby roster, started flag and full queue', () => {
+  let r = Room.claimHost(fresh(), 'h', 'hc');
+  r = Room.addPlayer(r, 'c1', 'cid1', 'Maya').room;
+  r = Room.startGame(r);
   r = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 1 }).room;
   const v = Room.viewFor(r, 'h');
   assert.strictEqual(v.role, 'host');
+  assert.strictEqual(v.started, true);
+  assert.deepStrictEqual(v.players, ['Maya']);
   assert.strictEqual(v.queue.length, 1);
 });
-test('a player view shows only their own queued orders and their player index', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
-  r = Room.joinPlayer(r, 'c2', { playerIdx: 1 }).room;
+test('a player view shows only their own queued orders, name and index', () => {
+  let r = Room.addPlayer(fresh(), 'c1', 'cid1', 'Maya').room;
+  r = Room.addPlayer(r, 'c2', 'cid2', 'Sam').room;
+  r = Room.startGame(r);
   r = Room.queueOrder(r, 'c1', { stockId: 'BPI', action: 'buy', qty: 1 }).room;
   r = Room.queueOrder(r, 'c2', { stockId: 'CCF', action: 'buy', qty: 1 }).room;
   const v = Room.viewFor(r, 'c2');
   assert.strictEqual(v.role, 'player');
   assert.strictEqual(v.you.playerIdx, 1);
-  assert.strictEqual(v.queue.length, 1);                 // only c2's order
+  assert.strictEqual(v.you.name, 'Sam');
+  assert.strictEqual(v.queue.length, 1);
   assert.strictEqual(v.queue[0].order.playerIdx, 1);
 });
-
-test('viewFor exposes which player slots are taken (for the join screen)', () => {
-  let r = Room.joinPlayer(fresh(), 'c1', { playerIdx: 0 }).room;
-  const v = Room.viewFor(r, 'spectator-conn');
+test('an unjoined connection sees a spectator view with the started flag', () => {
+  const v = Room.viewFor(fresh(), 'nobody');
   assert.strictEqual(v.role, 'spectator');
-  assert.strictEqual(v.slots.length, 3);
-  assert.strictEqual(v.slots[0].taken, true);
-  assert.strictEqual(v.slots[1].taken, false);
-  assert.strictEqual(v.slots[0].name, 'Maya');
+  assert.strictEqual(v.started, false);
 });
 
 run();

@@ -40,16 +40,20 @@ export default class GameServer {
     try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
-      case 'host': // start/host a new game
-        this.room = Room.claimHost(Room.create(msg.opts || {}), sender.id);
+      case 'host': // open the lobby for a new game (no players yet)
+        this.room = Room.claimHost(Room.create(msg.opts || { names: [] }), sender.id, msg.clientId);
         break;
 
-      case 'join': {
-        const res = Room.joinPlayer(this.requireRoom(), sender.id, { playerIdx: msg.playerIdx, name: msg.name });
-        if (res.error) return this.sendError(sender, res.error);
+      case 'join': { // a player adds themselves with their own name
+        const res = Room.addPlayer(this.requireRoom(), sender.id, msg.clientId, msg.name);
         this.room = res.room;
         break;
       }
+
+      case 'start': // host launches the market out of the lobby
+        if (!this.isHost(sender)) return this.sendError(sender, 'Only the host can start');
+        this.room = Room.startGame(this.requireRoom());
+        break;
 
       case 'order': {
         const res = Room.queueOrder(this.requireRoom(), sender.id, msg.order || {});

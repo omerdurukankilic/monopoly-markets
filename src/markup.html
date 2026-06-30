@@ -65,26 +65,67 @@
   </div>
 </sc-if>
 
-<!-- ═══════════════ PICK PLAYER (joining a hosted game) ═══════════════ -->
-<sc-if value="{{ isPickPlayer }}" hint-placeholder-val="{{ false }}">
-  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0d1117; padding:20px;">
-    <div style="width:100%; max-width:420px;">
-      <div style="text-align:center; margin-bottom:8px; font:700 18px 'JetBrains Mono',monospace; color:#e6edf3;">JOIN GAME</div>
-      <div style="text-align:center; margin-bottom:24px; font:13px Inter,system-ui; color:{{ connColor }};">Room {{ roomCode }} · {{ connStatus }}</div>
+<!-- ═══════════════ LOBBY (host: QR code to join) ═══════════════ -->
+<sc-if value="{{ isLobby }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0d1117; padding:24px;">
+    <div style="width:100%; max-width:760px; display:flex; gap:36px; flex-wrap:wrap; align-items:center; justify-content:center;">
 
-      <sc-if value="{{ pickWaiting }}" hint-placeholder-val="{{ true }}">
-        <div style="padding:40px 16px; text-align:center; color:#484f58; font:14px Inter,system-ui; line-height:1.7;">Connecting to the game…<br>Make sure the host has started it.</div>
-      </sc-if>
+      <!-- Scan-to-join -->
+      <div style="text-align:center;">
+        <div style="font:700 13px Inter,system-ui; letter-spacing:2px; text-transform:uppercase; color:#8b949e; margin-bottom:14px;">Scan to join</div>
+        <div style="display:inline-block; padding:14px; background:#fff; border-radius:14px;">{{ qrSvg }}</div>
+        <div style="margin-top:18px; color:#484f58; font:12px Inter,system-ui;">or go to the game URL and enter code</div>
+        <div style="margin-top:8px; font:800 40px 'JetBrains Mono',monospace; color:#58a6ff; letter-spacing:8px;">{{ roomCode }}</div>
+        <div style="margin-top:6px; font:11px Inter,system-ui; color:{{ connColor }};">● {{ connStatus }}</div>
+      </div>
 
-      <sc-if value="{{ hasSlots }}" hint-placeholder-val="{{ false }}">
-        <div style="color:#8b949e; font:12px Inter,system-ui; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; text-align:center;">Who are you?</div>
-        <sc-for list="{{ pickSlots }}" as="slot" hint-placeholder-count="3">
-          <button onclick="{{ slot.onClick }}" style="width:100%; height:54px; margin-bottom:10px; background:{{ slot.bg }}; border:1px solid {{ slot.border }}; border-radius:10px; color:{{ slot.color }}; font:600 16px Inter,system-ui; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 18px;">
-            <span>{{ slot.name }}</span>
-            <span style="font:600 12px Inter,system-ui; color:#484f58;">{{ slot.tag }}</span>
-          </button>
+      <!-- Roster + start -->
+      <div style="flex:1; min-width:240px;">
+        <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px;">
+          <div style="font:700 20px 'JetBrains Mono',monospace; color:#e6edf3;">{{ gameName }}</div>
+          <div style="font:13px Inter,system-ui; color:#484f58;">{{ lobbyCount }} joined</div>
+        </div>
+
+        <sc-if value="{{ noLobby }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:30px 16px; text-align:center; color:#30363d; font:14px Inter,system-ui; border:1px dashed #21262d; border-radius:10px; margin-bottom:16px;">Waiting for players to scan in…</div>
+        </sc-if>
+        <sc-for list="{{ lobbyRows }}" as="row" hint-placeholder-count="3">
+          <div style="display:flex; align-items:center; gap:10px; padding:11px 14px; margin-bottom:8px; background:#161b22; border:1px solid #21262d; border-radius:10px;">
+            <span style="font:700 13px 'JetBrains Mono',monospace; color:#484f58; width:20px;">{{ row.num }}</span>
+            <span style="font:600 15px Inter,system-ui; color:#e6edf3; flex:1;">{{ row.name }}</span>
+          </div>
         </sc-for>
-      </sc-if>
+
+        <button onclick="{{ onStartGame }}" style="width:100%; height:52px; margin-top:10px; background:#238636; border:1px solid #2ea043; border-radius:10px; color:#fff; font:700 16px Inter,system-ui; cursor:pointer;">▶  START GAME</button>
+        <div style="margin-top:8px; color:#484f58; font:12px Inter,system-ui; text-align:center;">Players keep their phones — you approve their trades here.</div>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ═══════════════ JOIN: ENTER YOUR NAME (player) ═══════════════ -->
+<sc-if value="{{ isJoinName }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0d1117; padding:24px;">
+    <div style="width:100%; max-width:380px;">
+      <div style="text-align:center; margin-bottom:6px; font:700 20px 'JetBrains Mono',monospace; color:#e6edf3;">JOIN GAME</div>
+      <div style="text-align:center; margin-bottom:28px; font:13px Inter,system-ui; color:{{ connColor }};">Room {{ roomCode }} · {{ connStatus }}</div>
+      <div style="color:#8b949e; font:12px Inter,system-ui; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">Your name</div>
+      <input value="{{ joinName }}" onchange="{{ onJoinNameChange }}" placeholder="e.g. Maya" maxlength="20" style="width:100%; height:54px; background:#161b22; border:1px solid #30363d; border-radius:12px; color:#e6edf3; font:18px Inter,system-ui; padding:0 16px; outline:none; box-sizing:border-box; margin-bottom:14px;">
+      <button onclick="{{ onSubmitName }}" style="width:100%; height:54px; background:#238636; border:1px solid #2ea043; border-radius:12px; color:#fff; font:700 17px Inter,system-ui; cursor:pointer;">JOIN →</button>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ═══════════════ WAITING FOR HOST (player) ═══════════════ -->
+<sc-if value="{{ isWaiting }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0d1117; padding:24px;">
+    <div style="width:100%; max-width:380px; text-align:center;">
+      <div style="font:700 22px Inter,system-ui; color:#3fb950; margin-bottom:6px;">You're in, {{ youName }}!</div>
+      <div style="font:14px Inter,system-ui; color:#8b949e; margin-bottom:28px;">Waiting for the host to start the game…</div>
+      <div style="color:#484f58; font:12px Inter,system-ui; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">{{ lobbyCount }} players in the lobby</div>
+      <sc-for list="{{ lobbyRows }}" as="row" hint-placeholder-count="3">
+        <div style="padding:10px 14px; margin-bottom:6px; background:#161b22; border:1px solid #21262d; border-radius:10px; font:600 15px Inter,system-ui; color:#e6edf3; display:flex; justify-content:space-between;"><span>{{ row.name }}</span><span style="color:#3fb950; font:600 12px Inter,system-ui;">{{ row.youTag }}</span></div>
+      </sc-for>
     </div>
   </div>
 </sc-if>

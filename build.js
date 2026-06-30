@@ -24,6 +24,7 @@ const markup = fs.readFileSync(path.join(root, 'src/markup.html'), 'utf8').trim(
 const component = fs.readFileSync(path.join(root, 'src/component.js'), 'utf8').trim();
 const engine = fs.readFileSync(path.join(root, 'src/engine.js'), 'utf8').trim();
 const net = fs.readFileSync(path.join(root, 'src/net.js'), 'utf8').trim();
+const qrcode = fs.readFileSync(path.join(root, 'src/qrcode.js'), 'utf8').trim();
 
 let html = fs.readFileSync(indexPath, 'utf8');
 
@@ -56,8 +57,10 @@ template = template.slice(0, bodyStart) + '\n' + component + '\n' + template.sli
 //    stay clean.
 template = template.replace(/<script id="game-engine">[\s\S]*?<\/script>\s*/, '');
 template = template.replace(/<script id="game-net">[\s\S]*?<\/script>\s*/, '');
+template = template.replace(/<script id="game-qr">[\s\S]*?<\/script>\s*/, '');
 const reOpenMatch = template.match(scriptOpenRe); // index shifted after step 3
-const globals = '<script id="game-engine">\n' + engine + '\n</script>\n' +
+const globals = '<script id="game-qr">\n' + qrcode + '\n</script>\n' +
+  '<script id="game-engine">\n' + engine + '\n</script>\n' +
   '<script id="game-net">\n' + net + '\n</script>\n';
 template = template.slice(0, reOpenMatch.index) + globals + template.slice(reOpenMatch.index);
 

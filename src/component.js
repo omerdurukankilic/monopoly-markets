@@ -46,7 +46,9 @@ class Component extends DCLogic {
     joinCode: '',
     you: { playerIdx: null, name: '' },
     pendingQueue: [],          // host: all queued orders; player: own only
-    slots: [],                 // for the join "pick your player" screen
+    lobbyPlayers: [],          // names of everyone who has joined (lobby roster)
+    joinName: '',              // a joining player's name entry
+    started: false,            // host has launched the market out of the lobby
   };
 
   eng() { return window.GameEngine; }
@@ -113,26 +115,58 @@ class Component extends DCLogic {
   }
   setJoinCode(v) { this.setState({ joinCode: (v || '').toUpperCase() }); }
 
+  // A stable per-device id so a dropped phone rejoins its own player.
+  clientId() {
+    if (this._clientId) return this._clientId;
+    let id;
+    try {
+      id = localStorage.getItem('mm_client_id');
+      if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('mm_client_id', id); }
+    } catch (e) { id = Math.random().toString(36).slice(2); }
+    this._clientId = id;
+    return id;
+  }
+
+  // The URL a player scans/opens to join — encodes the server host + room code.
+  joinUrl() {
+    const host = window.GameNet ? window.GameNet.resolveHost() : '';
+    let base = '';
+    try { base = location.origin + location.pathname; } catch (e) { base = ''; }
+    return base + '?host=' + encodeURIComponent(host) + '&room=' + this.state.roomCode;
+  }
+
+  makeQR(text) {
+    if (!window.qrcode || !text) return null;
+    let qr;
+    try { qr = window.qrcode(0, 'M'); qr.addData(text); qr.make(); } catch (e) { return null; }
+    const n = qr.getModuleCount();
+    const size = 240, cell = size / n, sq = cell + 0.6; // slight overlap avoids hairline gaps
+    const rects = [];
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) rects.push(React.createElement('rect', { key: r + '_' + c, x: +(c * cell).toFixed(2), y: +(r * cell).toFixed(2), width: sq, height: sq, fill: '#0d1117' }));
+    }
+    return React.createElement('svg', { width: size, height: size, viewBox: '0 0 ' + size + ' ' + size, style: { background: '#fff', display: 'block', borderRadius: '6px' } }, rects);
+  }
+
   hostOnline() {
     if (!window.GameNet) { this.showToast('Networking unavailable', 'error'); return; }
-    const { setupCount, setupNames, mode, gameName } = this.state;
-    const names = setupNames.slice(0, setupCount).map((n, i) => n || `Player ${i + 1}`);
+    const { mode, gameName } = this.state;
     const code = this.genRoomCode();
-    const opts = { names, mode, gameName };
-    this.setState({ phase: 'market', netRole: 'host', roomCode: code, connStatus: 'connecting', activePlayer: 0 });
+    const opts = { names: [], mode, gameName }; // players add themselves in the lobby
+    this.setState({ phase: 'lobby', netRole: 'host', roomCode: code, connStatus: 'connecting', activePlayer: 0, lobbyPlayers: [], started: false });
     this.conn = window.GameNet.connect({
       room: code,
-      onOpen: () => this.conn.send({ type: 'host', opts }),
+      onOpen: () => this.conn.send({ type: 'host', clientId: this.clientId(), opts }),
       onStatus: (s) => this.setState({ connStatus: s }),
       onMessage: (m) => this.onNetMessage(m),
     });
   }
 
-  startJoin() {
+  startJoin(code) {
     if (!window.GameNet) { this.showToast('Networking unavailable', 'error'); return; }
-    const code = (this.state.joinCode || '').trim().toUpperCase();
+    code = (code || this.state.joinCode || '').trim().toUpperCase();
     if (!code) { this.showToast('Enter a room code', 'error'); return; }
-    this.setState({ phase: 'pickPlayer', netRole: 'spectator', roomCode: code, connStatus: 'connecting', slots: [] });
+    this.setState({ phase: 'joinName', netRole: 'spectator', roomCode: code, connStatus: 'connecting' });
     this.conn = window.GameNet.connect({
       room: code,
       onStatus: (s) => this.setState({ connStatus: s }),
@@ -140,11 +174,14 @@ class Component extends DCLogic {
     });
   }
 
-  pickSlot(idx) {
-    if (!this.conn) return;
-    const slot = this.state.slots[idx];
-    this.conn.send({ type: 'join', playerIdx: idx, name: (this.state.you.name || '').trim() || (slot && slot.name) });
+  submitName() {
+    if (!this.conn) { this.showToast('Not connected yet', 'error'); return; }
+    const name = (this.state.joinName || '').trim();
+    if (!name) { this.showToast('Enter your name', 'error'); return; }
+    this.conn.send({ type: 'join', clientId: this.clientId(), name });
   }
+
+  startGame() { if (this.conn) this.conn.send({ type: 'start' }); }
 
   onNetMessage(m) {
     if (m.type === 'state') {
@@ -153,25 +190,24 @@ class Component extends DCLogic {
         stocks: v.game.stocks, players: v.game.players, round: v.game.round,
         news: v.game.news, transactions: v.game.transactions,
         gameName: v.game.gameName, mode: v.game.mode,
-        netRole: v.role, pendingQueue: v.queue || [], slots: v.slots || [],
+        netRole: v.role, pendingQueue: v.queue || [], lobbyPlayers: v.players || [], started: !!v.started,
       };
-      if (v.role === 'player') {
+      if (v.role === 'host') {
+        patch.phase = v.started ? 'market' : 'lobby';
+      } else if (v.role === 'player') {
         patch.you = v.you;
         patch.activePlayer = (typeof v.you.playerIdx === 'number') ? v.you.playerIdx : 0;
         patch.tradePlayerIdx = patch.activePlayer;
-        patch.phase = 'player';
-        if (!this.state.stocks.length) patch.tradeStockId = v.game.stocks[0] ? v.game.stocks[0].id : 'BPI';
-      } else if (v.role === 'host') {
-        patch.phase = 'market';
+        patch.phase = v.started ? 'player' : 'waiting';
+        if (!this.state.stocks.length && v.game.stocks[0]) patch.tradeStockId = v.game.stocks[0].id;
       } else {
-        patch.phase = 'pickPlayer'; // spectator still choosing a slot
+        patch.phase = 'joinName'; // spectator: still entering a name
       }
       this.setState(patch);
     } else if (m.type === 'error') {
       this.showToast(m.error, 'error');
     } else if (m.type === 'idle') {
-      // Connected but the host hasn't started the game yet.
-      if (this.state.netRole !== 'host') this.setState({ phase: 'pickPlayer', slots: [] });
+      if (this.state.netRole !== 'host') this.setState({ phase: 'joinName' });
     }
   }
 
@@ -407,20 +443,30 @@ class Component extends DCLogic {
       onReject: () => this.rejectPending(q.id),
     }));
     const myPendingRows = (s.pendingQueue || []).map(q => ({ label: myOrderLabel(q.order) }));
-    const pickSlots = (s.slots || []).map(sl => ({
-      name: sl.name,
-      tag: sl.taken ? 'taken' : 'tap to join',
-      onClick: () => { if (!sl.taken) this.pickSlot(sl.idx); },
-      bg: sl.taken ? '#0d1117' : '#161b22',
-      border: sl.taken ? '#21262d' : '#30363d',
-      color: sl.taken ? '#484f58' : '#e6edf3',
+
+    // Lobby roster (host lobby + player waiting screen).
+    const lobbyRows = (s.lobbyPlayers || []).map((nm, i) => ({
+      name: nm, num: i + 1,
+      you: !!(s.you && s.you.playerIdx === i),
+      youTag: (s.you && s.you.playerIdx === i) ? 'you' : '',
     }));
+
+    // One-time deep-link handling: ?room=CODE jumps straight to the join screen.
+    if (!this._urlChecked) {
+      this._urlChecked = true;
+      try {
+        const room = new URLSearchParams(location.search).get('room');
+        if (room && phase === 'setup') setTimeout(() => this.startJoin(room), 0);
+      } catch (e) { /* ignore */ }
+    }
 
     return {
       isSetup: phase === 'setup',
       isMarket: phase === 'market',
       isPlayer: phase === 'player',
-      isPickPlayer: phase === 'pickPlayer',
+      isLobby: phase === 'lobby',
+      isJoinName: phase === 'joinName',
+      isWaiting: phase === 'waiting',
       isHostOnline,
       showTradePanel: netRole === 'local',
       roomCode: s.roomCode,
@@ -428,7 +474,14 @@ class Component extends DCLogic {
       connColor,
       hostPendingRows, hasHostPending: hostPendingRows.length > 0, noHostPending: hostPendingRows.length === 0,
       myPendingRows, hasMyPending: myPendingRows.length > 0,
-      pickSlots, hasSlots: pickSlots.length > 0, pickWaiting: pickSlots.length === 0,
+      lobbyRows, lobbyCount: lobbyRows.length, hasLobby: lobbyRows.length > 0, noLobby: lobbyRows.length === 0,
+      qrSvg: phase === 'lobby' ? this.makeQR(this.joinUrl()) : null,
+      joinUrlText: phase === 'lobby' ? this.joinUrl() : '',
+      onStartGame: () => this.startGame(),
+      startDisabled: lobbyRows.length === 0,
+      joinName: s.joinName,
+      onJoinNameChange: e => this.setState({ joinName: e.target.value }),
+      onSubmitName: () => this.submitName(),
       youName: (s.you && s.you.name) ? s.you.name : (ap ? ap.name : 'You'),
       onHostOnline: () => this.hostOnline(),
       joinCode: s.joinCode,

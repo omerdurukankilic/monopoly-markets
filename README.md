@@ -113,19 +113,23 @@ host-authoritative model on [PartyKit](https://www.partykit.io/) (Cloudflare
 Durable Objects): the server holds the only copy of the game state and runs the
 same `src/engine.js` rules; clients only *propose*.
 
-**The flow**
+**The flow** (Kahoot-style — no need to pre-enter players)
 
-1. On one screen (laptop/tablet), set the game up and click **📡 HOST ONLINE** — you get a 4-character **room code**.
-2. Each player opens the app on their phone, types the code, and taps their name.
-3. Players get a phone-friendly view — market, news, leaderboard, their own positions/P&L — and **queue** buy / sell / short / cover / repay orders.
-4. The host sees a **Pending Approvals** panel and approves or rejects each one; approved orders fill at the current price. The host drives **Advance Round**.
+1. On one screen (laptop/tablet), click **📡 HOST ONLINE** — a lobby opens with a big **QR code** and a 4-character room code.
+2. Players **scan the QR** on their phones (or open the game URL and type the code), enter **their own name**, and land in the lobby. The host sees everyone arrive.
+3. The host clicks **START GAME**.
+4. Players get a phone-friendly view — market, news, leaderboard, their own positions/P&L — and **queue** buy / sell / short / cover / repay orders. Nothing fills automatically.
+5. The host sees a **Pending Approvals** panel and approves or rejects each one; approved orders fill at the current price. The host drives **Advance Round**.
+
+A dropped phone that reconnects rejoins its own player (a stable per-device id is kept in `localStorage`), so it won't spawn a duplicate.
 
 **How it's built**
 
-- `src/room.js` — room reducer (join / queue / approve / reject / advance), pure and unit-tested; orders are server-stamped with the member's slot (anti-spoof)
+- `src/room.js` — room reducer (dynamic join / start / queue / approve / reject / advance), pure and unit-tested; orders are server-stamped with the member's player (anti-spoof)
 - `party/server.js` — PartyKit server: one Durable Object per room, wraps the reducer, persists across hibernation, sends each connection its own view
 - `src/net.js` — the client's dependency-free reconnecting WebSocket
-- Player/host views live in the same `index.html` (no separate build)
+- `src/qrcode.js` — vendored MIT QR encoder (no runtime dependency)
+- Lobby / host / phone views all live in the same `index.html` (no separate build)
 - **Concurrency is safe by construction:** each room is single-threaded and the server is the only writer
 
 ### Setting it up

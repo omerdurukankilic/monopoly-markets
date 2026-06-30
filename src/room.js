@@ -1,23 +1,24 @@
 'use strict';
 // ============================================================================
-// Monopoly Markets — room reducer (cloud multiplayer)
+// Monopoly Markets — room reducer (cloud multiplayer, Kahoot-style join)
 // ----------------------------------------------------------------------------
-// Pure, transport-free logic for a host-authoritative multiplayer room. The
-// PartyKit server (party/server.js) owns one Room per game and is the ONLY
-// writer, so these reducers never need locks: clients merely *propose* orders
-// that the host approves, and the engine validates every applied move.
+// Pure, transport-free logic for a host-authoritative room. The PartyKit
+// server (party/server.js) owns one Room per game and is the ONLY writer, so
+// these reducers never need locks: clients only *propose* orders the host
+// approves, and the engine validates every applied move.
 //
-//   members:  connId -> { role:'host'|'player', playerIdx?, name? }
+// Players are NOT pre-defined — the host opens a lobby (with a QR code) and
+// players add themselves with their own names. A stable `clientId` (kept in
+// the phone's localStorage) maps a person to their player across reconnects,
+// so a dropped phone rejoins its own slot instead of spawning a duplicate.
+//
+//   game:     engine state (players appended as people join)
+//   members:  connId   -> { role:'host'|'player', clientId, playerIdx? }
+//   clients:  clientId -> playerIdx           (survives reconnects)
 //   queue:    [ { id, fromConnId, order, status:'pending', ts } ]
-//   game:     the engine state (single source of truth)
-//
-// Mirrors src/engine.js packaging so it loads under Node (tests) and esbuild
-// (PartyKit bundles the require below).
+//   started:  false in the lobby, true once the host starts the game
 // ============================================================================
 
-// Resolve the engine across runtimes: Node tests (require), the browser client
-// (window.GameEngine), and esbuild/PartyKit bundles (which inject it via
-// setEngine, since `require` may not exist at runtime there).
 var engine = null;
 try { if (typeof require !== 'undefined') engine = require('./engine'); } catch (e) { /* bundled env */ }
 if (!engine && typeof window !== 'undefined') engine = window.GameEngine;
@@ -28,9 +29,12 @@ function create(opts) {
   return {
     game: engine.createInitialState(opts || {}),
     members: {},
+    clients: {},
     queue: [],
     hostConnId: null,
+    hostClientId: null,
     nextOrderId: 1,
+    started: false,
   };
 }
 
@@ -38,44 +42,58 @@ function clone(room) {
   return {
     game: room.game,
     members: Object.assign({}, room.members),
+    clients: Object.assign({}, room.clients),
     queue: room.queue.slice(),
     hostConnId: room.hostConnId,
+    hostClientId: room.hostClientId,
     nextOrderId: room.nextOrderId,
+    started: room.started,
   };
 }
 
-function claimHost(room, connId) {
+function claimHost(room, connId, clientId) {
   var r = clone(room);
-  r.members[connId] = { role: 'host' };
+  r.members[connId] = { role: 'host', clientId: clientId || null };
   r.hostConnId = connId;
+  r.hostClientId = clientId || null;
   return r;
 }
 
-function joinPlayer(room, connId, info) {
-  info = info || {};
-  var idx = info.playerIdx;
-  if (typeof idx !== 'number' || idx < 0 || idx >= room.game.players.length) {
-    return { room: room, error: 'Invalid player slot' };
-  }
-  // Reject a slot already held by a different connection.
-  var taken = Object.keys(room.members).some(function (c) {
-    return c !== connId && room.members[c].role === 'player' && room.members[c].playerIdx === idx;
-  });
-  if (taken) return { room: room, error: 'That player is already taken' };
-
+// Add a player (new name) or re-attach a returning one by clientId.
+function addPlayer(room, connId, clientId, name) {
   var r = clone(room);
-  r.members[connId] = { role: 'player', playerIdx: idx, name: info.name || room.game.players[idx].name };
-  return { room: r };
+  if (clientId && r.clients[clientId] != null) {
+    var idx = r.clients[clientId];
+    r.members[connId] = { role: 'player', clientId: clientId, playerIdx: idx };
+    if (name) {
+      r.game = Object.assign({}, r.game, {
+        players: r.game.players.map(function (p, i) { return i === idx ? Object.assign({}, p, { name: name }) : p; }),
+      });
+    }
+    return { room: r, playerIdx: idx };
+  }
+  r.game = engine.addPlayer(r.game, name || ('Player ' + (r.game.players.length + 1)));
+  var newIdx = r.game.players.length - 1;
+  if (clientId) r.clients[clientId] = newIdx;
+  r.members[connId] = { role: 'player', clientId: clientId || null, playerIdx: newIdx };
+  return { room: r, playerIdx: newIdx };
 }
 
+function startGame(room) {
+  var r = clone(room);
+  r.started = true;
+  return r;
+}
+
+function fail(room, msg) { return { room: room, error: msg }; }
+
 function queueOrder(room, connId, order) {
+  if (!room.started) return fail(room, 'The game has not started yet');
   var member = room.members[connId];
-  if (!member || typeof member.playerIdx !== 'number') {
-    return { room: room, error: 'Join as a player before placing orders' };
-  }
+  if (!member || typeof member.playerIdx !== 'number') return fail(room, 'Join the game before placing orders');
   var r = clone(room);
   var id = 'o' + r.nextOrderId++;
-  // Stamp the player from the trusted membership, never from the client payload.
+  // Stamp the player from the trusted membership, never the client payload.
   var stamped = {
     playerIdx: member.playerIdx,
     stockId: order.stockId,
@@ -90,13 +108,9 @@ function queueOrder(room, connId, order) {
 function approveOrder(room, orderId) {
   var item = null;
   for (var i = 0; i < room.queue.length; i++) if (room.queue[i].id === orderId) item = room.queue[i];
-  if (!item) return { room: room, error: 'Order not found' };
-
+  if (!item) return fail(room, 'Order not found');
   var res = engine.applyTrade(room.game, item.order);
-  if (res.error) {
-    // Leave the game untouched; surface why so the host can tell the player.
-    return { room: room, error: res.error };
-  }
+  if (res.error) return fail(room, res.error); // leave game untouched
   var r = clone(room);
   r.game = res.state;
   r.queue = r.queue.filter(function (q) { return q.id !== orderId; });
@@ -117,29 +131,24 @@ function advance(room, rng) {
 }
 
 // What a given connection is allowed to see. Everyone sees the market and the
-// leaderboard; the host sees every pending order, a player sees only their own.
+// lobby roster; the host sees every pending order, a player sees only their own.
 function viewFor(room, connId) {
   var member = room.members[connId] || { role: 'spectator' };
   var isHost = member.role === 'host';
   var queue = isHost
     ? room.queue.slice()
     : room.queue.filter(function (q) { return typeof member.playerIdx === 'number' && q.order.playerIdx === member.playerIdx; });
-
-  // Which player slots are already claimed — lets the join screen disable them.
-  var taken = {};
-  Object.keys(room.members).forEach(function (c) {
-    var m = room.members[c];
-    if (m.role === 'player' && typeof m.playerIdx === 'number') taken[m.playerIdx] = true;
-  });
-  var slots = room.game.players.map(function (p, i) { return { idx: i, name: p.name, taken: !!taken[i] }; });
-
+  var youName;
+  if (typeof member.playerIdx === 'number' && room.game.players[member.playerIdx]) {
+    youName = room.game.players[member.playerIdx].name;
+  }
   return {
     role: member.role,
-    you: { playerIdx: member.playerIdx, name: member.name },
-    roomReady: true,
-    slots: slots,
-    game: room.game,
+    you: { playerIdx: member.playerIdx, name: youName },
+    started: room.started,
+    players: room.game.players.map(function (p) { return p.name; }),
     queue: queue,
+    game: room.game,
   };
 }
 
@@ -147,7 +156,8 @@ var ROOM = {
   setEngine: setEngine,
   create: create,
   claimHost: claimHost,
-  joinPlayer: joinPlayer,
+  addPlayer: addPlayer,
+  startGame: startGame,
   queueOrder: queueOrder,
   approveOrder: approveOrder,
   rejectOrder: rejectOrder,
